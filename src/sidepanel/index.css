@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+    margin: 0;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-slate-50 dark:ring-offset-slate-950;
+  }
+}
+
+@layer components {
+  .markdown {
+    @apply text-sm leading-relaxed text-slate-800 dark:text-slate-100;
+    overflow-wrap: anywhere;
+  }
+
+  .markdown > * + * {
+    @apply mt-2;
+  }
+
+  .markdown h1,
+  .markdown h2,
+  .markdown h3,
+  .markdown h4 {
+    @apply font-semibold leading-snug text-slate-900 dark:text-slate-50;
+  }
+
+  .markdown h1 {
+    @apply text-base;
+  }
+
+  .markdown h2 {
+    @apply text-[0.95rem];
+  }
+
+  .markdown h3,
+  .markdown h4 {
+    @apply text-sm;
+  }
+
+  .markdown ul {
+    @apply list-disc space-y-1 pl-5;
+  }
+
+  .markdown ol {
+    @apply list-decimal space-y-1 pl-5;
+  }
+
+  .markdown li > p {
+    @apply mt-0;
+  }
+
+  .markdown strong {
+    @apply font-semibold text-slate-900 dark:text-slate-50;
+  }
+
+  .markdown a {
+    @apply break-words text-brand-600 underline decoration-brand-300 underline-offset-2 hover:text-brand-700 dark:text-brand-300 dark:hover:text-brand-200;
+  }
+
+  .markdown code {
+    @apply rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.8em] text-slate-800 dark:bg-slate-800 dark:text-slate-100;
+  }
+
+  .markdown pre {
+    @apply overflow-x-auto rounded-lg bg-slate-900 p-2.5 text-xs text-slate-100 dark:bg-black/60;
+  }
+
+  .markdown pre code {
+    @apply bg-transparent p-0 text-inherit;
+  }
+
+  .markdown blockquote {
+    @apply border-l-2 border-brand-300 pl-3 text-slate-600 dark:border-brand-700 dark:text-slate-300;
+  }
+
+  .markdown hr {
+    @apply border-slate-200 dark:border-slate-700;
+  }
+
+  .markdown table {
+    @apply block w-full overflow-x-auto border-collapse text-xs;
+  }
+
+  .markdown th {
+    @apply border border-slate-200 bg-slate-50 px-2 py-1 text-left font-semibold dark:border-slate-700 dark:bg-slate-800;
+  }
+
+  .markdown td {
+    @apply border border-slate-200 px-2 py-1 align-top dark:border-slate-700;
+  }
+
+  .markdown img {
+    @apply max-w-full rounded;
+  }
+
+  .markdown input[type='checkbox'] {
+    @apply mr-1 align-middle;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(148 163 184 / 0.5) transparent;
+  }
+}

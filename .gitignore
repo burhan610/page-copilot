@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+Thumbs.db
+
+# Temp verification artifacts (not part of the project)
+.preview/
+.tmp-verify/
