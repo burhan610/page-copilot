@@ -11,10 +11,13 @@
 | **Explain selection** | Right-click any text on the page and choose "Explain with Page Copilot". |
 | **Translate selection** | Right-click any text and choose "Translate with Page Copilot". |
 | **Translate page** | Translate the entire page into your chosen language. |
-| **Chat freely** | Send messages to the AI; it remembers the last 10 turns per tab. |
-| **Settings** | Configure your provider, API key, model, response language, and summary length. |
+| **Page chat** | Ask follow-up questions about the page; up to 10 recent messages are supplied as context. |
+| **Settings** | Choose cloud or local mode, enter an API key, and configure the local model, response language, and summary length. Cloud providers are detected from the key. |
 
 ## Setup
+
+For a prebuilt Chrome/Edge ZIP, installation instructions, and release steps,
+see [DEPLOYMENT.md](DEPLOYMENT.md). Read [PRIVACY.md](PRIVACY.md) for data handling details.
 
 ### Option A: Local model (llama.cpp, free — no API key)
 
@@ -44,19 +47,19 @@ Runs entirely on your machine. Nothing is sent to any cloud service.
 3. **Open the side panel**: Click the Page Copilot icon in the Chrome toolbar.
 4. **Enter your API key**: In the side panel, click the gear icon → paste your Gemini API key → save. The key is stored locally in `chrome.storage.local` and never synced.
 
-### Option C: OpenAI (GPT-4o, o1, etc.)
+### Option C: OpenAI
 
 1. **Get an OpenAI API key**: Go to <https://platform.openai.com/api-keys> and create a key.
 2. **Load the extension**: Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `dist` folder of this project.
 3. **Open the side panel**: Click the Page Copilot icon in the Chrome toolbar.
-4. **Enter your API key**: In the side panel, click the gear icon → paste your OpenAI API key → set **Provider** to `OpenAI` → select your model (e.g., `gpt-4o`, `gpt-4o-mini`) → save.
+4. **Enter your API key**: In Settings, choose **Cloud API**, paste your OpenAI API key, and save. The provider is detected automatically; the extension uses `gpt-4o-mini`.
 
 ### Option D: Groq (llama-3.3-70b, etc.)
 
 1. **Get a Groq API key**: Go to <https://console.groq.com/keys> and create a key.
 2. **Load the extension**: Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `dist` folder of this project.
 3. **Open the side panel**: Click the Page Copilot icon in the Chrome toolbar.
-4. **Enter your API key**: In the side panel, click the gear icon → paste your Groq API key → set **Provider** to `Groq` → select your model → save.
+4. **Enter your API key**: In Settings, choose **Cloud API**, paste your Groq API key, and save. The provider is detected automatically; the extension uses `llama-3.3-70b-versatile`.
 
 ## Quick test checklist
 
@@ -95,7 +98,7 @@ page-copilot/
         ChatWindow.tsx          # Message list with auto-scroll, markdown rendering, empty/loading states
         MessageBubble.tsx       # User/assistant bubbles with copy button + markdown (react-markdown + remark-gfm)
         QuickActions.tsx        # Buttons: Summarize, Key points, ELI5, Translate
-        SettingsPanel.tsx       # Provider toggle, API key, model picker (cloud list + local models), language, summary length, test key button
+        SettingsPanel.tsx       # Cloud/local toggle, API key, local model field, language, summary length, connection test
         ErrorBanner.tsx         # Friendly error messages with codes (missing-key, rate-limit, network, etc.)
       hooks/
         useActiveTab.ts       # Tracks active tab, detects restricted pages, favicon updates
@@ -141,7 +144,7 @@ npm run lint
 # Build for production
 npm run build
 
-# Start dev server (Vite + React in watch mode)
+# Rebuild the extension when files change (reload it in the browser afterward)
 npm run dev
 ```
 

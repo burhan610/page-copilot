@@ -4,6 +4,13 @@ dist/
 .DS_Store
 Thumbs.db
 *.log
+.env
+.env.*
+*.zip
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Temp verification artifacts (not part of the project)
 .preview/
