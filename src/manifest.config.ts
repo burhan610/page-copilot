@@ -7,8 +7,21 @@ export default defineManifest({
     'Summarize, question, explain and translate the page you are reading with an AI copilot in the Chrome side panel.',
   version: '1.0.0',
   minimum_chrome_version: '116',
-  permissions: ['activeTab', 'scripting', 'storage', 'sidePanel', 'contextMenus', 'tabs'],
-  host_permissions: ['https://generativelanguage.googleapis.com/*'],
+  permissions: [
+    'activeTab',
+    'scripting',
+    'storage',
+    'sidePanel',
+    'contextMenus',
+    'tabs',
+  ],
+  host_permissions: [
+    'https://generativelanguage.googleapis.com/*',
+    'https://api.groq.com/*',
+    'https://api.openai.com/*',
+    // Local llama.cpp server (llama-server), reached over loopback only.
+    'http://127.0.0.1:8090/*',
+  ],
   background: {
     service_worker: 'src/background/service-worker.ts',
     type: 'module',

@@ -1,6 +1,6 @@
 # Page Copilot
 
-**Page Copilot** is a Chrome extension that puts an AI assistant in your side panel. It can summarize the current web page, answer questions about it, explain selected text, and translate text — all using your own AI API key. No backend, no tracking, no server.
+**Page Copilot** is a Chrome extension that puts an AI assistant in your side panel. It can summarize the current web page, answer questions about it, explain selected text, and translate text — using either your own AI API key or a free local model served by [llama.cpp](https://github.com/ggml-org/llama.cpp). No backend, no tracking, no server.
 
 ## What it does
 
@@ -12,14 +12,51 @@
 | **Translate selection** | Right-click any text and choose "Translate with Page Copilot". |
 | **Translate page** | Translate the entire page into your chosen language. |
 | **Chat freely** | Send messages to the AI; it remembers the last 10 turns per tab. |
-| **Settings** | Configure your API key, model, response language, and summary length. |
+| **Settings** | Configure your provider, API key, model, response language, and summary length. |
 
 ## Setup
 
-1. **Get a Google Gemini API key**: Go to <https://aistudio.google.com/api-keys> and create a key. (You already have keys: Gemini API Key 3, Gemini API Key 2, Gemini API Key Key, Default API Key — as shown in your AI Studio screenshot.)
+### Option A: Local model (llama.cpp, free — no API key)
+
+Runs entirely on your machine. Nothing is sent to any cloud service.
+
+1. **Get llama.cpp**: download a Windows build from <https://github.com/ggml-org/llama.cpp/releases> — `llama-<tag>-bin-win-cpu-x64.zip`, or the `llama-<tag>-bin-win-cuda-<ver>-x64.zip` build plus its matching `cudart-llama-bin-win-cuda-<ver>-x64.zip` if you want GPU acceleration — and unzip it somewhere like `%LOCALAPPDATA%\llamacpp`.
+2. **Download a model**: get a GGUF file and drop it in a `models` folder next to `llama-server.exe`. A good small default for a 4 GB GPU is [`Qwen2.5-1.5B-Instruct-Q4_K_M.gguf`](https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF) (~1 GB).
+3. **Start the server**:
+
+   ```bash
+   llama-server.exe -m models\Qwen2.5-1.5B-Instruct-Q4_K_M.gguf --alias qwen2.5-1.5b --port 8090
+   ```
+
+4. **Load the extension**: Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `dist` folder of this project.
+5. **Enable the local model**: In the side panel, click the gear icon → turn on **Local model** → pick your model from the dropdown → save. No API key needed.
+
+> The extension talks to `http://127.0.0.1:8090`, llama.cpp's OpenAI-compatible API. It binds the loopback interface, so only your machine can reach it.
+
+> **If the panel says the local server is unreachable**: it is not running — start `llama-server` and try again. If Chrome shows a local network access prompt, choose **Allow**.
+
+> **To serve a different model**: download another GGUF and start `llama-server` with it (`-m <other.gguf> --alias <name>`); it appears in the dropdown when you reopen Settings.
+
+### Option B: Google Gemini
+
+1. **Get a Gemini API key**: Go to <https://aistudio.google.com/api-keys> and create a key.
 2. **Load the extension**: Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `dist` folder of this project.
 3. **Open the side panel**: Click the Page Copilot icon in the Chrome toolbar.
 4. **Enter your API key**: In the side panel, click the gear icon → paste your Gemini API key → save. The key is stored locally in `chrome.storage.local` and never synced.
+
+### Option C: OpenAI (GPT-4o, o1, etc.)
+
+1. **Get an OpenAI API key**: Go to <https://platform.openai.com/api-keys> and create a key.
+2. **Load the extension**: Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `dist` folder of this project.
+3. **Open the side panel**: Click the Page Copilot icon in the Chrome toolbar.
+4. **Enter your API key**: In the side panel, click the gear icon → paste your OpenAI API key → set **Provider** to `OpenAI` → select your model (e.g., `gpt-4o`, `gpt-4o-mini`) → save.
+
+### Option D: Groq (llama-3.3-70b, etc.)
+
+1. **Get a Groq API key**: Go to <https://console.groq.com/keys> and create a key.
+2. **Load the extension**: Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `dist` folder of this project.
+3. **Open the side panel**: Click the Page Copilot icon in the Chrome toolbar.
+4. **Enter your API key**: In the side panel, click the gear icon → paste your Groq API key → set **Provider** to `Groq` → select your model → save.
 
 ## Quick test checklist
 
@@ -32,6 +69,7 @@
 - [ ] Stop a streaming response using the Stop button.
 - [ ] Enter an invalid API key → shows a friendly error message.
 - [ ] Open the panel on `chrome://extensions` → shows a restricted-page message.
+- [ ] Turn on the local model in settings → it appears in the dropdown, and a summarize works with no API key.
 
 ## Project structure
 
@@ -45,7 +83,7 @@ page-copilot/
     content/content-script.ts     # Readability extraction + message listener (GET_PAGE_CONTENT, GET_SELECTION)
     lib/
       extract.ts        # Text cleaning, chunking, restricted-page detection
-      llm.ts            # Anthropic Messages API client + SSE parsing + LLMProvider interface
+      llm.ts            # Multi-provider LLM client (OpenAI, Gemini, Groq, local llama.cpp) + SSE parsing + LLMProvider interface
       prompts.ts        # System prompts for each action + map-reduce logic
       messaging.ts      # Typed helpers: sendToTab, sendToBackground, connectToBackground
       storage.ts        # Typed chrome.storage wrappers (sync for settings, local for API key)
@@ -57,7 +95,7 @@ page-copilot/
         ChatWindow.tsx          # Message list with auto-scroll, markdown rendering, empty/loading states
         MessageBubble.tsx       # User/assistant bubbles with copy button + markdown (react-markdown + remark-gfm)
         QuickActions.tsx        # Buttons: Summarize, Key points, ELI5, Translate
-        SettingsPanel.tsx       # API key, model, language, summary length, test key button
+        SettingsPanel.tsx       # Provider toggle, API key, model picker (cloud list + local models), language, summary length, test key button
         ErrorBanner.tsx         # Friendly error messages with codes (missing-key, rate-limit, network, etc.)
       hooks/
         useActiveTab.ts       # Tracks active tab, detects restricted pages, favicon updates
@@ -78,10 +116,12 @@ page-copilot/
 ## Known limitations
 
 - Only works on regular web pages. Does not run on `chrome://` pages, the Chrome Web Store, or PDFs.
-- The AI provider API is called directly from the extension; page text is sent to the AI provider only when the user triggers an action.
+- The AI provider API is called directly from the extension; page text is sent to the AI provider (cloud or your local model server) only when the user triggers an action.
 - API key is stored in `chrome.storage.local` only — it is never synced to Google accounts or backed up.
 - Long-page summarization uses a chunk-based map-reduce approach; very long pages may take a few seconds.
 - The extension requires Chrome 116+ for the side panel API.
+- Local model mode requires the local llama.cpp server to be running; if it is stopped, the extension shows a friendly network error with a hint to start `llama-server`.
+- Small local models (e.g. `qwen3.5:0.8b`) answer quickly but are less accurate than cloud models; large models need more RAM/VRAM than some laptops have.
 
 ## Development
 
@@ -91,6 +131,9 @@ npm install
 
 # Check TypeScript types
 npm run typecheck
+
+# Run regression tests (mocked providers; no API key or local server needed)
+npm test
 
 # Run lint
 npm run lint
@@ -108,4 +151,4 @@ npm run dev
 - Uses [react-markdown](https://github.com/react-markdown/react-markdown) + [remark-gfm](https://github.com/remarkjs/remark-gfm) for markdown rendering
 - Uses [@crxjs/vite-plugin](https://crxjs.dev/) for Manifest V3 builds
 - UI styled with [Tailwind CSS](https://tailwindcss.com/)
-- Gemini API integration: Google Generative AI (Gemini 1.5 Flash / Gemini Pro) called directly from the browser extension
+- **Multi-provider LLM support**: OpenAI (Chat Completions API, `Authorization: Bearer` header), Google Gemini (Generative Language API, `x-goog-api-key` header), Groq (OpenAI-compatible Chat Completions API), and llama.cpp (local `llama-server` at `http://127.0.0.1:8090`, OpenAI-compatible streaming, no API key) — all called directly from the browser extension

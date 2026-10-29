@@ -39,13 +39,13 @@ export function getErrorCopy(error: ErrorInfo): ErrorCopy {
     case 'network':
       return {
         title: "Couldn't reach the AI service",
-        message: 'Check your internet connection and try again.',
+        message: 'Check your connection, or start the local model server, then try again.',
         detail,
       }
     case 'model-not-found':
       return {
         title: 'Model not available',
-        message: 'The model name in Settings was not found for this API key. Update it in Settings.',
+        message: 'The model in Settings is not available. Pick one in Settings.',
         detail,
         openSettings: true,
       }

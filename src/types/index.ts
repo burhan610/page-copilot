@@ -1,23 +1,23 @@
 /** Shared contracts between the side panel, service worker and content script. */
 
 export type Role = 'user' | 'assistant'
-
 export type SummaryLength = 'short' | 'medium' | 'detailed'
 
 export interface Settings {
-  /** Model name, e.g. "claude-3-opus-20240229". */
-  model: string
   /** Language for answers and for the Translate action (display name). */
   language: string
   summaryLength: SummaryLength
+  /** Use the local model server instead of a cloud provider. */
+  useLocal: boolean
+  /** Model served by the local llama.cpp server, e.g. "qwen2.5-1.5b". */
+  localModel: string
 }
 
-export const DEFAULT_MODEL = 'gemini-2.5-flash'
-
 export const DEFAULT_SETTINGS: Settings = {
-  model: DEFAULT_MODEL,
   language: 'English',
   summaryLength: 'medium',
+  useLocal: false,
+  localModel: 'qwen2.5-1.5b',
 }
 
 export const LANGUAGE_OPTIONS = [
@@ -120,6 +120,14 @@ export class AppError extends Error {
   }
 }
 
+/** Provider interface for swapping LLM vendors. */
+export interface LLMProvider {
+  readonly id: string
+  readonly label: string
+  streamCompletion(params: import('../lib/llm').StreamCompletionParams): Promise<void>
+}
+
+/** Error with a machine-readable code for UI display. */
 export function toErrorInfo(error: unknown): ErrorInfo {
   if (error instanceof AppError) {
     return error.detail ? { code: error.code, detail: error.detail } : { code: error.code }
@@ -177,11 +185,17 @@ export type ContentResponse =
   | { type: 'CONTENT_ERROR'; message: string }
 
 /** One-off messages to the service worker. */
-export type RuntimeMessage = { type: 'TEST_KEY'; apiKey: string; model: string }
+export type RuntimeMessage =
+  | { type: 'TEST_KEY'; apiKey: string; useLocal: boolean; localModel: string }
+  | { type: 'LIST_LOCAL_MODELS' }
 
 export interface TestKeyResult {
   ok: boolean
   error?: ErrorInfo
+}
+
+export interface LocalModelsResult {
+  models: string[]
 }
 
 /** Messages sent from the side panel over a long-lived port. */

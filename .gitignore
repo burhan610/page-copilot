@@ -3,6 +3,7 @@ dist/
 *.local
 .DS_Store
 Thumbs.db
+*.log
 
 # Temp verification artifacts (not part of the project)
 .preview/

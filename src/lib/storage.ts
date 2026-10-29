@@ -7,6 +7,10 @@ import {
   type SummaryLength,
 } from '../types'
 
+/* ------------------------------------------------------------------ */
+/* Settings (sync) and API key (local only)                            */
+/* ------------------------------------------------------------------ */
+
 const SETTINGS_KEY = 'settings'
 const API_KEY_KEY = 'apiKey'
 const CHAT_PREFIX = 'chat:'
@@ -25,10 +29,6 @@ function normalizeSettings(value: unknown): Settings {
   if (typeof value !== 'object' || value === null) return { ...DEFAULT_SETTINGS }
   const record = value as Record<string, unknown>
 
-  const model =
-    typeof record.model === 'string' && record.model.trim()
-      ? record.model.trim()
-      : DEFAULT_SETTINGS.model
   const language =
     typeof record.language === 'string' && record.language.trim()
       ? record.language.trim()
@@ -36,13 +36,22 @@ function normalizeSettings(value: unknown): Settings {
   const summaryLength = isSummaryLength(record.summaryLength)
     ? record.summaryLength
     : DEFAULT_SETTINGS.summaryLength
+  // Settings saved by the Ollama build used useOllama/ollamaModel; carry the
+  // toggle over so the local mode stays on. A saved Ollama model name is only
+  // kept when it was custom: the shipped default no longer exists locally.
+  const legacyOllamaModel =
+    typeof record.ollamaModel === 'string' ? record.ollamaModel.trim() : ''
+  const useLocal =
+    typeof record.useLocal === 'boolean' ? record.useLocal : record.useOllama === true
+  const localModel =
+    typeof record.localModel === 'string' && record.localModel.trim()
+      ? record.localModel.trim()
+      : legacyOllamaModel && legacyOllamaModel !== 'qwen3.5:0.8b'
+        ? legacyOllamaModel
+        : DEFAULT_SETTINGS.localModel
 
-  return { model, language, summaryLength }
+  return { language, summaryLength, useLocal, localModel }
 }
-
-/* ------------------------------------------------------------------ */
-/* Settings (sync) and API key (local only)                            */
-/* ------------------------------------------------------------------ */
 
 export async function getSettings(): Promise<Settings> {
   try {

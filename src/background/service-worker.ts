@@ -1,19 +1,25 @@
+type RunActionMessage = Extract<UiRequest, { type: 'RUN_ACTION' }>
+type PageWideAction = Exclude<ActionKind, SelectionAction>
+
+const EXPLAIN_MENU_ID = 'page-copilot-explain-selection'
+const TRANSLATE_MENU_ID = 'page-copilot-translate-selection'
+
 import {
+  ActionKind,
   AppError,
-  DEFAULT_MODEL,
   PORT_NAME,
   toErrorInfo,
-  type ActionKind,
   type BackgroundEvent,
   type ChatTurn,
+  type LLMProvider,
   type PageContent,
   type PendingSelection,
   type RuntimeMessage,
   type SelectionAction,
   type Settings,
-  type SummaryLength,
   type TestKeyResult,
   type UiRequest,
+  type SummaryLength,
 } from '../types'
 import {
   CHUNK_OVERLAP,
@@ -39,7 +45,14 @@ import {
   translate,
   translateSelection,
 } from '../lib/prompts'
-import { complete, streamCompletion } from '../lib/llm'
+import {
+  DEFAULT_LOCAL_MODEL,
+  complete,
+  getProvider,
+  getProviderIdFromKey,
+  isLocalModelInstalled,
+  listLocalModels,
+} from '../lib/llm'
 import { sendToTab } from '../lib/messaging'
 import {
   clearPendingSelection,
@@ -51,27 +64,24 @@ import {
   savePendingSelection,
 } from '../lib/storage'
 
-const EXPLAIN_MENU_ID = 'page-copilot-explain-selection'
-const TRANSLATE_MENU_ID = 'page-copilot-translate-selection'
-const ASK_MAX_TOKENS = 4096
+
 const SUMMARY_MAX_TOKENS = 4096
 const CHUNK_NOTE_MAX_TOKENS = 1200
-
-type PageWideAction = Exclude<ActionKind, SelectionAction>
-type RunActionMessage = Extract<UiRequest, { type: 'RUN_ACTION' }>
-
-interface ActiveStream {
-  controller: AbortController
-  tabId: number
-}
 
 const ports = new Set<chrome.runtime.Port>()
 const portTabs = new Map<chrome.runtime.Port, number>()
 const streamsByPort = new Map<chrome.runtime.Port, Map<string, ActiveStream>>()
 
+type ActiveStream = {
+  controller: AbortController
+  tabId: number
+}
+
 /* ------------------------------------------------------------------ */
+
 /* Setup                                                               */
 /* ------------------------------------------------------------------ */
+
 
 function ensurePanelBehavior(): void {
   try {
@@ -118,8 +128,10 @@ function post(port: chrome.runtime.Port, event: BackgroundEvent): void {
 }
 
 /* ------------------------------------------------------------------ */
+
 /* Context menu -> side panel                                          */
 /* ------------------------------------------------------------------ */
+
 
 function deliverPending(pending: PendingSelection): boolean {
   let delivered = false
@@ -179,8 +191,10 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 })
 
 /* ------------------------------------------------------------------ */
+
 /* Ports and streams                                                   */
 /* ------------------------------------------------------------------ */
+
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== PORT_NAME) return
@@ -250,16 +264,27 @@ async function handleRunAction(port: chrome.runtime.Port, request: RunActionMess
   try {
     const [settings, apiKey] = await Promise.all([getSettings(), getApiKey()])
 
-    if (!apiKey.trim()) {
+    // A local model needs no key; otherwise auto-detect from the key prefix
+    // (sk- = OpenAI, gsk_ = Groq, AIza/AQ = Gemini).
+    const providerId = settings.useLocal ? 'local' : getProviderIdFromKey(apiKey)
+    if (providerId !== 'local' && !apiKey.trim()) {
       throw new AppError('missing-key', 'No API key is configured.')
     }
-    if (!settings.model.trim()) {
-      throw new AppError('bad-request', 'No model name is configured.')
-    }
+    const provider = getProvider(providerId)
+    const model = resolveModel(providerId, settings)
 
     const action = request.action
     if (action === 'explain-selection' || action === 'translate-selection') {
-      await runSelectionAction(port, request, action, settings, apiKey, controller.signal)
+      await runSelectionAction(
+        port,
+        request,
+        action,
+        settings,
+        apiKey,
+        controller.signal,
+        provider,
+        model,
+      )
     } else {
       await runPageAction(
         request,
@@ -269,6 +294,8 @@ async function handleRunAction(port: chrome.runtime.Port, request: RunActionMess
         controller.signal,
         postChunk,
         postProgress,
+        provider,
+        model,
       )
     }
 
@@ -285,8 +312,10 @@ async function handleRunAction(port: chrome.runtime.Port, request: RunActionMess
 }
 
 /* ------------------------------------------------------------------ */
+
 /* Actions                                                             */
 /* ------------------------------------------------------------------ */
+
 
 async function runSelectionAction(
   port: chrome.runtime.Port,
@@ -295,6 +324,8 @@ async function runSelectionAction(
   settings: Settings,
   apiKey: string,
   signal: AbortSignal,
+  provider: LLMProvider,
+  model: string,
 ): Promise<void> {
   const selection = (request.selection ?? '').trim()
   if (!selection) {
@@ -311,17 +342,17 @@ async function runSelectionAction(
     message: isExplain ? 'Explaining the selection…' : `Translating to ${language}…`,
   })
 
-  await streamCompletion({
+  await provider.streamCompletion({
     system: buildSystemPrompt({
       language,
       page: { title: tab.title ?? '', url: tab.url ?? '' },
       selection,
     }),
-    messages: [{ role: 'user', content: isExplain ? explainSelection() : translateSelection(language) }],
-    model: settings.model,
+    messages: [{ role: 'user', content: isExplain ? explainSelection() : translateSelection(language) }],        model,
+
     apiKey,
     signal,
-    maxTokens: ASK_MAX_TOKENS,
+    maxTokens: 4096,
     onChunk: (text) => post(port, { type: 'STREAM_CHUNK', requestId: request.requestId, text }),
   })
 }
@@ -334,6 +365,8 @@ async function runPageAction(
   signal: AbortSignal,
   postChunk: (text: string) => void,
   postProgress: (message: string) => void,
+  provider: LLMProvider,
+  model: string,
 ): Promise<void> {
   postProgress('Reading the page…')
   const page = await loadPageContent(request.tabId)
@@ -365,13 +398,13 @@ async function runPageAction(
 
     postProgress(long ? 'Searching the page for the answer…' : 'Thinking…')
 
-    await streamCompletion({
+    await provider.streamCompletion({
       system: buildSystemPrompt({ language, page: promptPage, pageIsExcerpt: long }),
       messages: buildAskMessages(question, normalizeHistory(request.history)),
-      model: settings.model,
+      model,
       apiKey,
       signal,
-      maxTokens: ASK_MAX_TOKENS,
+      maxTokens: 4096,
       onChunk: postChunk,
     })
     return
@@ -381,10 +414,10 @@ async function runPageAction(
 
   if (!isLongPage(text)) {
     postProgress('Thinking…')
-    await streamCompletion({
+    await provider.streamCompletion({
       system: buildSystemPrompt({ language, page }),
       messages: [{ role: 'user', content: instruction }],
-      model: settings.model,
+      model,
       apiKey,
       signal,
       maxTokens: SUMMARY_MAX_TOKENS,
@@ -405,7 +438,7 @@ async function runPageAction(
       postProgress(`Translating part ${index + 1} of ${chunks.length}…`)
       if (index > 0) postChunk('\n\n')
 
-      await streamCompletion({
+      await provider.streamCompletion({
         system: buildTranslateChunkSystemPrompt(language),
         messages: [
           {
@@ -413,7 +446,7 @@ async function runPageAction(
             content: buildTranslateChunkUserPrompt(chunk, index + 1, chunks.length),
           },
         ],
-        model: settings.model,
+        model,
         apiKey,
         signal,
         maxTokens: SUMMARY_MAX_TOKENS,
@@ -433,7 +466,10 @@ async function runPageAction(
     if (signal.aborted) throw new AppError('aborted', 'The request was stopped.')
 
     postProgress(`Reading part ${index + 1} of ${chunks.length}…`)
-    const note = await complete({
+    // Buffer the streamed note through the resolved provider so every provider
+    // (not just the default) works on the map-reduce path.
+    let note = ''
+    await provider.streamCompletion({
       system: buildChunkSystemPrompt({
         language,
         pageTitle: page.title,
@@ -444,10 +480,13 @@ async function runPageAction(
       messages: [
         { role: 'user', content: buildChunkUserPrompt(chunk, index + 1, chunks.length) },
       ],
-      model: settings.model,
+      model,
       apiKey,
       signal,
       maxTokens: CHUNK_NOTE_MAX_TOKENS,
+      onChunk: (piece) => {
+        note += piece
+      },
     })
 
     const trimmed = note.trim()
@@ -463,7 +502,7 @@ async function runPageAction(
   }
 
   postProgress('Writing the final answer…')
-  await streamCompletion({
+  await provider.streamCompletion({
     system: buildMergeSystemPrompt(language),
     messages: [
       {
@@ -474,13 +513,21 @@ async function runPageAction(
           notes.length,
         ),
       },
-    ],
-    model: settings.model,
+    ],        model,
+
     apiKey,
     signal,
     maxTokens: SUMMARY_MAX_TOKENS,
     onChunk: postChunk,
   })
+}
+
+/** Model to send for each provider. The local model is user-configurable. */
+function resolveModel(providerId: string, settings: Settings): string {
+  if (providerId === 'local') return settings.localModel || DEFAULT_LOCAL_MODEL
+  if (providerId === 'groq') return 'llama-3.3-70b-versatile'
+  if (providerId === 'openai') return 'gpt-4o-mini'
+  return 'gemini-2.5-flash'
 }
 
 function pageInstruction(action: PageWideAction, length: SummaryLength, language: string): string {
@@ -512,8 +559,10 @@ function normalizeHistory(history: ChatTurn[] | undefined): ChatTurn[] {
 }
 
 /* ------------------------------------------------------------------ */
+
 /* Page access                                                         */
 /* ------------------------------------------------------------------ */
+
 
 async function getTab(tabId: number): Promise<chrome.tabs.Tab> {
   try {
@@ -555,7 +604,7 @@ async function loadPageContent(tabId: number): Promise<PageContent> {
       throw new AppError(
         'content-unavailable',
         'Page Copilot could not read this page.',
-        'Page Copilot could not read this page. It may be a Chrome page, a PDF, or a site that blocks extensions.',
+        'Page Copilot could not read this page. Reload the page and try again. If it still fails it may be a Chrome page, a PDF, or a site that blocks extensions.',
       )
     }
   }
@@ -570,16 +619,20 @@ async function loadPageContent(tabId: number): Promise<PageContent> {
 }
 
 /* ------------------------------------------------------------------ */
+
 /* API key test                                                        */
 /* ------------------------------------------------------------------ */
+
 
 function isRuntimeMessage(message: unknown): message is RuntimeMessage {
   if (typeof message !== 'object' || message === null) return false
   const record = message as Record<string, unknown>
+  if (record['type'] === 'LIST_LOCAL_MODELS') return true
   return (
     record['type'] === 'TEST_KEY' &&
     typeof record['apiKey'] === 'string' &&
-    typeof record['model'] === 'string'
+    typeof record['useLocal'] === 'boolean' &&
+    typeof record['localModel'] === 'string'
   )
 }
 
@@ -589,23 +642,52 @@ async function testApiKey(message: RuntimeMessage): Promise<TestKeyResult> {
   }
 
   const apiKey = message.apiKey.trim()
+
+  // The local server needs no key: proving it is up and serving the chosen
+  // model is the whole test. The panel sends its current (possibly unsaved)
+  // toggle, so this reflects what the user sees.
+  if (message.useLocal) {
+    const models = await listLocalModels()
+    if (models.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: 'network',
+          detail:
+            'The local model server is not running. Start llama-server with your model, then try again.',
+        },
+      }
+    }
+    const wanted = message.localModel.trim()
+    if (wanted && !isLocalModelInstalled(wanted, models)) {
+      return {
+        ok: false,
+        error: { code: 'model-not-found', detail: `That model is not loaded by the local server: ${wanted}` },
+      }
+    }
+    return { ok: true }
+  }
+
   if (!apiKey) return { ok: false, error: { code: 'missing-key' } }
 
+  const providerId = getProviderIdFromKey(apiKey)
+  const model = resolveModel(providerId, await getSettings())
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 30_000)
 
   try {
-    await complete({
-      system: 'You are a connection test. Reply with exactly: OK',
-      messages: [{ role: 'user', content: 'Reply with OK.' }],
-      model: message.model.trim() || DEFAULT_MODEL,
-      apiKey,
-      signal: controller.signal,
-      // Gemini 2.5 spends part of the budget thinking before it answers, so
-      // keep enough headroom for the answer text to arrive.
-      maxTokens: 256,
-      temperature: 0,
-    })
+    await complete(
+      {
+        system: 'You are a connection test. Reply with exactly: OK',
+        messages: [{ role: 'user', content: 'Reply with OK.' }],
+        model,
+        apiKey,
+        signal: controller.signal,
+        maxTokens: 256,
+        temperature: 0,
+      },
+      providerId,
+    )
     return { ok: true }
   } catch (error) {
     const info = toErrorInfo(error)
@@ -624,6 +706,13 @@ async function testApiKey(message: RuntimeMessage): Promise<TestKeyResult> {
 chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
   if (!isRuntimeMessage(message)) return false
 
+  if (message.type === 'LIST_LOCAL_MODELS') {
+    void listLocalModels()
+      .then((models) => sendResponse({ models }))
+      .catch(() => sendResponse({ models: [] }))
+    return true
+  }
+
   void testApiKey(message)
     .then(sendResponse)
     .catch((error: unknown) => sendResponse({ ok: false, error: toErrorInfo(error) }))
@@ -632,8 +721,10 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 })
 
 /* ------------------------------------------------------------------ */
+
 /* Tab lifecycle                                                       */
 /* ------------------------------------------------------------------ */
+
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.url === undefined) return

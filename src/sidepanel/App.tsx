@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import type { QuickAction, RestrictedPage, Settings } from '../types'
+import type { QuickAction, RestrictedPage } from '../types'
 import { useActiveTab } from './hooks/useActiveTab'
 import { useChat } from './hooks/useChat'
 import { useSettings } from './hooks/useSettings'
@@ -290,7 +290,7 @@ export default function App() {
   const {
     settings,
     apiKey,
-    hasApiKey,
+    ready,
     loading: settingsLoading,
     save,
   } = useSettings()
@@ -310,7 +310,7 @@ export default function App() {
   const openSettings = (): void => setSettingsOpen(true)
 
   const handleQuickAction = (action: QuickAction): void => {
-    if (!hasApiKey) {
+    if (!ready) {
       openSettings()
       return
     }
@@ -318,7 +318,7 @@ export default function App() {
   }
 
   const handleAsk = (): void => {
-    if (!hasApiKey) {
+    if (!ready) {
       openSettings()
       return
     }
@@ -331,21 +331,24 @@ export default function App() {
     setDraft('')
   }
 
-  const handleSaveSettings = async (nextSettings: Settings, nextKey: string): Promise<void> => {
-    await save(nextSettings, nextKey)
+  const handleSaveSettings = async (
+    apiKey: string,
+    next?: Partial<typeof settings>,
+  ): Promise<void> => {
+    await save(apiKey, next)
     chat.dismissError()
   }
 
   const settingsReady = !settingsLoading && !tabLoading
   const pageUnavailable = Boolean(restricted) || !tab
-  const composerDisabled = !hasApiKey || pageUnavailable || settingsLoading
+  const composerDisabled = !ready || pageUnavailable || settingsLoading
 
   const placeholder = !tab
     ? 'Open a website tab to get started'
     : restricted
       ? "This page can't be read"
-      : !hasApiKey
-        ? 'Add your API key in Settings to start'
+      : !ready
+        ? 'Choose a local model or add an API key in Settings'
         : 'Ask anything about this page…'
 
   return (
@@ -376,7 +379,7 @@ export default function App() {
           settingsReady={settingsReady}
           isStreaming={chat.isStreaming}
           progress={chat.progress}
-          hasApiKey={hasApiKey}
+          hasApiKey={ready}
           tab={tab}
           restricted={restricted}
           onOpenSettings={openSettings}
@@ -386,7 +389,7 @@ export default function App() {
 
       <footer className="shrink-0 border-t border-slate-200 bg-white px-3 pb-2.5 pt-2 dark:border-slate-800 dark:bg-slate-950">
         <QuickActions
-          disabled={chat.isStreaming || pageUnavailable || !settingsReady}
+          disabled={chat.isStreaming || pageUnavailable || !settingsReady || !ready}
           language={settings.language}
           onAction={handleQuickAction}
         />
@@ -406,8 +409,8 @@ export default function App() {
 
       <SettingsPanel
         open={settingsOpen}
-        settings={settings}
         apiKey={apiKey}
+        settings={settings}
         onClose={() => setSettingsOpen(false)}
         onSave={handleSaveSettings}
       />

@@ -1,10 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import {
-  DEFAULT_MODEL,
-  DEFAULT_SETTINGS,
-  type Settings,
-  type SummaryLength,
-} from '../../types'
+import { DEFAULT_SETTINGS, type Settings } from '../../types'
 import {
   getApiKey,
   getSettings,
@@ -17,8 +12,10 @@ export interface SettingsController {
   settings: Settings
   apiKey: string
   hasApiKey: boolean
+  /** A cloud key is set, or a local model is enabled: something can answer. */
+  ready: boolean
   loading: boolean
-  save: (settings: Settings, apiKey: string) => Promise<void>
+  save: (apiKey: string, next?: Partial<Settings>) => Promise<void>
 }
 
 export function useSettings(): SettingsController {
@@ -52,23 +49,29 @@ export function useSettings(): SettingsController {
     }
   }, [])
 
-  const save = useCallback(async (nextSettings: Settings, nextKey: string): Promise<void> => {
-    const summaryLength: SummaryLength = nextSettings.summaryLength
-    const normalized: Settings = {
-      model: nextSettings.model.trim() || DEFAULT_MODEL,
-      language: nextSettings.language.trim() || DEFAULT_SETTINGS.language,
-      summaryLength,
-    }
+  const save = useCallback(
+    async (apiKey: string, next?: Partial<Settings>): Promise<void> => {
+      const normalized: Settings = {
+        language: next?.language ?? settings.language,
+        summaryLength: next?.summaryLength ?? settings.summaryLength,
+        useLocal: next?.useLocal ?? settings.useLocal,
+        localModel: next?.localModel ?? settings.localModel,
+      }
 
-    await Promise.all([saveSettings(normalized), saveApiKey(nextKey)])
-    setSettings(normalized)
-    setApiKey(nextKey.trim())
-  }, [])
+      await Promise.all([saveSettings(normalized), saveApiKey(apiKey)])
+      setSettings(normalized)
+      setApiKey(apiKey.trim())
+    },
+    [settings],
+  )
+
+  const hasApiKey = apiKey.trim().length > 0
 
   return {
     settings,
     apiKey,
-    hasApiKey: apiKey.trim().length > 0,
+    hasApiKey,
+    ready: hasApiKey || settings.useLocal,
     loading,
     save,
   }

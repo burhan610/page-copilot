@@ -5,6 +5,7 @@
   "description": "AI assistant in the Chrome side panel: summarize, question, explain and translate the page you are reading.",
   "type": "module",
   "scripts": {
+    "test": "node --test scripts/regression.test.mjs",
     "dev": "vite build --watch --mode development",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",

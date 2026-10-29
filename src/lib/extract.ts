@@ -54,7 +54,7 @@ function splitLongBlock(block: string, maxChars: number, overlap: number): strin
     if (cut < maxChars * 0.5) cut = rest.lastIndexOf('\n', maxChars)
     if (cut < maxChars * 0.5) cut = rest.lastIndexOf(' ', maxChars)
     if (cut < Math.floor(maxChars * 0.5)) cut = maxChars
-    else cut += 1
+    else cut = Math.min(cut + 1, maxChars)
 
     const piece = rest.slice(0, cut).trim()
     if (piece) pieces.push(piece)
@@ -122,7 +122,9 @@ export function chunkText(text: string, maxChars = CHUNK_SIZE, overlap = CHUNK_O
     if (candidate.length > safeMax) {
       push(current)
       const tail = overlapTail(current)
-      current = tail ? `${tail}\n\n${trimmedBlock}` : trimmedBlock
+      current = tail && tail.length + 2 + trimmedBlock.length <= safeMax
+        ? `${tail}\n\n${trimmedBlock}`
+        : trimmedBlock
     } else {
       current = candidate
     }
